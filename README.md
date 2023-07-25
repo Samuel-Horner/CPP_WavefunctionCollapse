@@ -3,5 +3,6 @@ A implementation of my simplified WFC algorithm in C++
 
 Makes EXTENSIVE use of ANSII escape characters, probably wont work in most terminals (works in windows 11 cmd and powershell)
 
-![image](https://user-images.githubusercontent.com/74322088/234984904-9cb7bccf-8393-4c62-ab83-cfd360951511.png)
+![image](https://github.com/A3therium/CPP_WavefunctionCollapse/assets/74322088/7f8ae8ff-eac4-4c97-bd48-88016b54a6aa)
+
 A sample map generated
