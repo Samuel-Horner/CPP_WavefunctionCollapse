@@ -27,7 +27,7 @@ class Pos {
         return ((x < maxx) && (x >= 0) && (y < maxy) && (y >= 0));
     }
 
-struct stateStr {
+struct StateStr {
     std::string state;
     std::vector<std::string> neighbours;
 };
@@ -46,28 +46,51 @@ std::vector<Pos> shuffle(std::vector<Pos> v) {
 class Cell {
     public:
         std::string state = null;
-        Cell(std::vector<stateStr> states);
-        void collapse(std::vector<std::string> neighbours);
-    private:
-       std::vector<stateStr> stateList;
+        Cell(std::vector<StateStr> states);
+        void collapse(std::vector<std::string> neighbours, std::vector<std::vector<StateStr>> neighbourStateList);
+        void setState();
+        std::vector<StateStr> stateList;
 };
-    Cell::Cell(std::vector<stateStr> states){
+    Cell::Cell(std::vector<StateStr> states){
         stateList = states;
     }
 
-    void Cell::collapse(std::vector<std::string> neighbours){
-        std::vector<std::string> possibleStates;
-        for (stateStr i: stateList){
+    void Cell::collapse(std::vector<std::string> neighbours, std::vector<std::vector<StateStr>> neighbourStateList){
+        if (state != null){return;}
+        std::vector<StateStr> possibleStates;
+        for (StateStr i: stateList){
             bool validState = true;
             for (std::string j: neighbours){
-                if (find(i.neighbours.begin(), i.neighbours.end(), j) == i.neighbours.end()){
+                if (std::find(i.neighbours.begin(), i.neighbours.end(), j) == i.neighbours.end()){
                     validState = false;
                     break;
                 }
             }
-            if (validState){possibleStates.push_back(i.state);}
+            if (validState){possibleStates.push_back(i);}
         }
-        state = possibleStates[rand() % possibleStates.size()];
+        std::vector<StateStr> possibleStatesAfterPass;
+        for (StateStr i: possibleStates){
+            bool validState = true;
+            for (std::vector<StateStr> j: neighbourStateList){
+                bool pseudoValid = false;
+                for (StateStr k: j){
+                    if (std::find(i.neighbours.begin(), i.neighbours.end(), k.state) != i.neighbours.end()){
+                        pseudoValid = true;
+                        break;
+                    }
+                }
+                if (!pseudoValid){
+                    validState = false;
+                    break;
+                }
+            }
+            if (validState){possibleStatesAfterPass.push_back(i);}
+        }
+        stateList = possibleStatesAfterPass;
+    }
+
+    void Cell::setState(){
+        state = stateList[rand() % stateList.size()].state;
     }
 
 class Grid {
@@ -75,13 +98,14 @@ class Grid {
         std::vector<std::vector<Cell>> grid;
         int width;
         int height;
-        Grid(int width, int height, std::vector<stateStr> stateList);
+        Grid(int width, int height, std::vector<StateStr> stateList);
         void print();
         void generate();
     private:
-        void propagate(Pos pos);
+        std::vector<Pos> visited;
+        void propagate(Pos pos, bool optimisedProp);    
 };
-    Grid::Grid(int w, int h, std::vector<stateStr> stateList){
+    Grid::Grid(int w, int h, std::vector<StateStr> stateList){
         std::vector<Cell> gridRow;
         for (int i = 0; i < h; i++){
             gridRow = {};
@@ -95,31 +119,66 @@ class Grid {
     }
 
     void Grid::generate(){
-        propagate(Pos(rand() % width, rand() % height));
+        std::vector<Pos> minPos = std::vector<Pos>();
+        Pos pos = Pos(rand() % width, rand() % height);
+        propagate(pos, true);
+        bool genFin = false;
+        while (!genFin){
+            print();
+            visited = std::vector<Pos>();
+            genFin = true;
+            int minStates = 999;
+            minPos.clear();
+            for (int i = 0; i < height; i++){
+                for (int j = 0; j < width; j++){
+                    if (grid[i][j].state == null){
+                        genFin = false;
+                        int states = grid[i][j].stateList.size();
+                        if (states < minStates){
+                            minStates = states;
+                            minPos.clear();
+                            minPos.push_back(Pos(j,i));
+                        }
+                    }
+                }
+            }
+            if (genFin){break;}
+            propagate(minPos[rand() % minPos.size()], true);
+        }
+
     }
 
-    void Grid::propagate(Pos xy){
-        if (grid[xy.y][xy.x].state != null){return;}
+    void Grid::propagate(Pos xy, bool hard){
+        for (int i = 0; i < visited.size(); i++){
+            if (visited[i].x == xy.x && visited[i].y == xy.y){
+                return;
+            }
+        }
+        visited.push_back(xy);
         std::vector<std::string> neighbours;
         std::vector<Pos> neighbourPosList;
+        std::vector<std::vector<StateStr>> neighbourStateList;
         for (auto i: offsets){
             std::string neighbourState = null;
             Pos neighbourPos = i.add(xy);
-            if (neighbourPos.within(grid[0].size(),grid.size())){
+            if (neighbourPos.within(width,height)){
                 neighbourState = grid[neighbourPos.y][neighbourPos.x].state;
                 if (neighbourState == null){
                     neighbourPosList.push_back(neighbourPos);
+                    neighbourStateList.push_back(grid[neighbourPos.y][neighbourPos.x].stateList);
                 }
             }
             if (neighbourState != null){
                 neighbours.push_back(neighbourState);
             }
         }
-        grid[xy.y][xy.x].collapse(neighbours);
-        print();
-        neighbourPosList = shuffle(neighbourPosList);
+        int prevStateListSize = grid[xy.y][xy.x].stateList.size();
+        grid[xy.y][xy.x].collapse(neighbours, neighbourStateList);
+        if (hard){grid[xy.y][xy.x].setState();}
+        if (!hard && prevStateListSize == grid[xy.y][xy.x].stateList.size()){return;}
+        //print();
         for (auto i: neighbourPosList){
-            propagate(i);
+            propagate(i, false);
         }
     }
     
@@ -127,12 +186,14 @@ class Grid {
         std::string output;
         for (int i = 0; i < height; i++){
             for (int j = 0; j < width; j++){
-                output.append(grid[i][j].state + " ");
+                if (grid[i][j].state != null){output.append(grid[i][j].state + " ");}
+                else {output.append("\x1b[0m" + std::to_string(grid[i][j].stateList.size()) + " ");}
             }
             output.append("\n");
         }
         std::cout << "\x1b[H\x1b[0J" << output << "\x1b[0m";
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        //std::cin.get();
     }
 
 
@@ -144,10 +205,11 @@ int main() {
     std::string s3 = "\x1b[1;32m#\x1b[22m";
     std::string s4 = "\x1b[32m|";
     std::string s5 = "\x1b[37m^";
-    std::vector<stateStr> stateList = {{s1,{s1,s2}},{s2,{s2,s1,s3}},{s3,{s3,s2,s1,s4,s5}},{s4,{s4,s3,s5}},{s5,{s4,s5}}};
+    std::vector<StateStr> stateList = {{s1,{s1,s2,s3}},{s2,{s3}},{s3,{s1,s3,s4,s5}},{s4,{s4,s3,s5}},{s5,{s4}}};
 
     Grid map(75,40,stateList);
     map.generate();
+    map.print();
 
     // Debug info
     auto stop = std::chrono::high_resolution_clock::now();
@@ -164,7 +226,7 @@ int main() {
         }
     }
 
-    for (int i = 0; i < stateList.size(); i++){std::cout << stateList[i].state << "\x1b[0m: " << ((double)totals[i] / (75. * 40.) * 100.) << "% ";}
+    for (int i = 0; i < stateList.size(); i++){std::cout << stateList[i].state << "\x1b[0m: " << ((double)totals[i] / (map.grid[0].size() * map.grid.size()) * 100.) << "% ";}
     std::cout << "\n\x1b[38;5;1mDone generating. Press enter to exit.\x1b[0m\nTime taken to complete: " << std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() << "ms";
     std::cin.get();
 
